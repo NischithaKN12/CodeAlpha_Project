@@ -1,203 +1,534 @@
+import javax.swing.*;
+import javax.swing.table.DefaultTableModel;
+import java.awt.*;
+import java.io.*;
 import java.util.ArrayList;
-import java.util.Scanner;
 
-/**
- * Student Grade Tracker (console-based)
- * CodeAlpha Java Programming Internship - Task 1
- *
- * Features:
- *  - Add, view, update and delete students
- *  - Calculate average, highest and lowest scores
- *  - Summary report of all students
- *  - Data stored in an ArrayList
- */
-public class StudentGradeTracker {
+public class StudentGradeTracker extends JFrame {
 
-    // Simple model class for one student
-    static class Student {
-        private String name;
-        private double grade;
+    ArrayList<Student> students = new ArrayList<>();
+    int nextId = 1;
 
-        Student(String name, double grade) {
-            this.name = name;
-            this.grade = grade;
-        }
+    JTextField nameField, marksField, searchField;
+    JTable table;
+    DefaultTableModel model;
 
-        String getName() { return name; }
-        double getGrade() { return grade; }
-        void setName(String name) { this.name = name; }
-        void setGrade(double grade) { this.grade = grade; }
+    JLabel total, average, highest, lowest, passed, failed, topper;
 
-        // Letter grade based on score
-        String getLetterGrade() {
-            if (grade >= 90) return "A";
-            if (grade >= 80) return "B";
-            if (grade >= 70) return "C";
-            if (grade >= 60) return "D";
-            return "F";
-        }
-    }
+    Color navy = new Color(20, 31, 52);
+    Color blue = new Color(42, 99, 210);
+    Color bg = new Color(243, 246, 251);
 
-    private static final ArrayList<Student> students = new ArrayList<>();
-    private static final Scanner scanner = new Scanner(System.in);
+    public StudentGradeTracker() {
 
-    public static void main(String[] args) {
-        int choice;
-        do {
-            printMenu();
-            choice = readInt("Enter your choice: ");
-            switch (choice) {
-                case 1: addStudent(); break;
-                case 2: viewStudents(); break;
-                case 3: updateStudent(); break;
-                case 4: deleteStudent(); break;
-                case 5: showSummaryReport(); break;
-                case 0: System.out.println("Goodbye!"); break;
-                default: System.out.println("Invalid choice. Please try again.");
+        setTitle("Student Grade Management System");
+        setSize(1100, 750);
+        setMinimumSize(new Dimension(900, 650));
+        setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+        setLocationRelativeTo(null);
+
+        JPanel main = new JPanel(new BorderLayout());
+        main.setBackground(bg);
+
+        // HEADER
+        JPanel header = new JPanel();
+        header.setLayout(new BoxLayout(header, BoxLayout.Y_AXIS));
+        header.setBackground(navy);
+        header.setBorder(BorderFactory.createEmptyBorder(20, 25, 20, 20));
+
+        JLabel title = new JLabel("STUDENT GRADE TRACKER");
+        title.setFont(new Font("Arial", Font.BOLD, 28));
+        title.setForeground(Color.WHITE);
+
+        JLabel subtitle = new JLabel(
+            "Manage Records | Track Performance | Generate Reports"
+        );
+        subtitle.setForeground(Color.LIGHT_GRAY);
+
+        header.add(title);
+        header.add(Box.createVerticalStrut(8));
+        header.add(subtitle);
+
+        main.add(header, BorderLayout.NORTH);
+
+        // CONTENT
+        JPanel content = new JPanel();
+        content.setBackground(bg);
+        content.setBorder(BorderFactory.createEmptyBorder(20, 20, 20, 20));
+        content.setLayout(new BoxLayout(content, BoxLayout.Y_AXIS));
+
+        // INPUT SECTION
+        JPanel input = createPanel();
+        input.setLayout(new GridLayout(2, 2, 10, 10));
+
+        nameField = new JTextField();
+        marksField = new JTextField();
+
+        input.add(new JLabel("Student Name"));
+        input.add(nameField);
+        input.add(new JLabel("Marks (0-100)"));
+        input.add(marksField);
+
+        content.add(input);
+        content.add(Box.createVerticalStrut(15));
+
+        // BUTTONS
+        JPanel buttons = new JPanel(new FlowLayout(FlowLayout.LEFT));
+        buttons.setBackground(bg);
+
+        JButton add = button("Add Student", blue);
+        JButton edit = button("Edit Selected", blue);
+        JButton delete = button("Delete Selected", new Color(190, 65, 65));
+        JButton export = button("Export CSV", blue);
+        JButton clear = button("Clear All", blue);
+
+        buttons.add(add);
+        buttons.add(edit);
+        buttons.add(delete);
+        buttons.add(export);
+        buttons.add(clear);
+
+        content.add(buttons);
+
+        // SEARCH
+        JPanel search = new JPanel(new FlowLayout(FlowLayout.RIGHT));
+        search.setBackground(bg);
+
+        searchField = new JTextField(18);
+        JButton searchBtn = button("Search", blue);
+        JButton showAll = button("Show All", blue);
+
+        search.add(new JLabel("Search:"));
+        search.add(searchField);
+        search.add(searchBtn);
+        search.add(showAll);
+
+        content.add(search);
+        content.add(Box.createVerticalStrut(15));
+
+        // STATISTICS
+        JPanel stats = new JPanel(new GridLayout(2, 3, 12, 12));
+        stats.setBackground(bg);
+
+        total = addCard(stats, "TOTAL STUDENTS");
+        average = addCard(stats, "AVERAGE MARKS");
+        highest = addCard(stats, "HIGHEST MARKS");
+        lowest = addCard(stats, "LOWEST MARKS");
+        passed = addCard(stats, "PASSED STUDENTS");
+        failed = addCard(stats, "FAILED STUDENTS");
+
+        content.add(stats);
+        content.add(Box.createVerticalStrut(15));
+
+        // TOPPER
+        JPanel topperPanel = createPanel();
+        topper = new JLabel("TOPPER: No records available");
+        topper.setFont(new Font("Arial", Font.BOLD, 15));
+        topper.setForeground(blue);
+        topperPanel.add(topper);
+
+        content.add(topperPanel);
+        content.add(Box.createVerticalStrut(15));
+
+        // STUDENT TABLE
+        JPanel tablePanel = createPanel();
+        tablePanel.setLayout(new BorderLayout());
+
+        JLabel tableTitle = new JLabel("STUDENT RECORDS");
+        tableTitle.setFont(new Font("Arial", Font.BOLD, 17));
+
+        String[] columns = {
+            "ID", "STUDENT NAME", "MARKS", "GRADE", "STATUS"
+        };
+
+        model = new DefaultTableModel(columns, 0) {
+            public boolean isCellEditable(int r, int c) {
+                return false;
             }
-        } while (choice != 0);
-        scanner.close();
+        };
+
+        table = new JTable(model);
+        table.setRowHeight(30);
+        table.getTableHeader().setFont(
+            new Font("Arial", Font.BOLD, 12)
+        );
+
+        tablePanel.add(tableTitle, BorderLayout.NORTH);
+        tablePanel.add(new JScrollPane(table), BorderLayout.CENTER);
+
+        content.add(tablePanel);
+
+        JScrollPane scroll = new JScrollPane(content);
+        scroll.setBorder(null);
+        scroll.getVerticalScrollBar().setUnitIncrement(16);
+
+        main.add(scroll, BorderLayout.CENTER);
+        add(main);
+
+        // BUTTON ACTIONS
+        add.addActionListener(e -> addStudent());
+        edit.addActionListener(e -> editStudent());
+        delete.addActionListener(e -> deleteStudent());
+        export.addActionListener(e -> exportCSV());
+        clear.addActionListener(e -> clearAll());
+
+        searchBtn.addActionListener(e -> refreshTable());
+
+        showAll.addActionListener(e -> {
+            searchField.setText("");
+            refreshTable();
+        });
+
+        searchField.addActionListener(e -> refreshTable());
+
+        refreshDashboard();
+        setVisible(true);
     }
 
-    private static void printMenu() {
-        System.out.println();
-        System.out.println("===== STUDENT GRADE TRACKER =====");
-        System.out.println("1. Add student");
-        System.out.println("2. View all students");
-        System.out.println("3. Update student grade");
-        System.out.println("4. Delete student");
-        System.out.println("5. Show summary report");
-        System.out.println("0. Exit");
-        System.out.println("=================================");
+    // CREATE PANEL
+    JPanel createPanel() {
+        JPanel p = new JPanel();
+        p.setBackground(Color.WHITE);
+        p.setBorder(BorderFactory.createCompoundBorder(
+            BorderFactory.createLineBorder(new Color(225, 230, 240)),
+            BorderFactory.createEmptyBorder(15, 15, 15, 15)
+        ));
+        return p;
     }
 
-    // ---------- Operations ----------
+    // CREATE BUTTON
+    JButton button(String text, Color color) {
+        JButton b = new JButton(text);
+        b.setBackground(color);
+        b.setForeground(Color.WHITE);
+        b.setFocusPainted(false);
+        b.setFont(new Font("Arial", Font.BOLD, 12));
+        return b;
+    }
 
-    private static void addStudent() {
-        System.out.print("Enter student name: ");
-        String name = scanner.nextLine().trim();
+    // STATISTICS CARD
+    JLabel addCard(JPanel panel, String heading) {
+
+        JPanel card = createPanel();
+        card.setLayout(new BorderLayout());
+
+        JLabel name = new JLabel(heading, SwingConstants.CENTER);
+        name.setFont(new Font("Arial", Font.BOLD, 12));
+
+        JLabel value = new JLabel("0", SwingConstants.CENTER);
+        value.setForeground(blue);
+        value.setFont(new Font("Arial", Font.BOLD, 27));
+
+        card.add(name, BorderLayout.NORTH);
+        card.add(value, BorderLayout.CENTER);
+
+        panel.add(card);
+        return value;
+    }
+
+    // ADD STUDENT
+    void addStudent() {
+
+        String name = nameField.getText().trim();
+
         if (name.isEmpty()) {
-            System.out.println("Name cannot be empty.");
+            JOptionPane.showMessageDialog(this,
+                "Please enter student name");
             return;
         }
-        double grade = readGrade("Enter grade (0-100): ");
-        students.add(new Student(name, grade));
-        System.out.println("Student added successfully.");
+
+        try {
+            double marks = Double.parseDouble(
+                marksField.getText().trim()
+            );
+
+            if (marks < 0 || marks > 100) {
+                JOptionPane.showMessageDialog(this,
+                    "Marks must be between 0 and 100");
+                return;
+            }
+
+            students.add(new Student(nextId++, name, marks));
+
+            nameField.setText("");
+            marksField.setText("");
+
+            refreshDashboard();
+
+            JOptionPane.showMessageDialog(this,
+                "Student added successfully!");
+
+        } catch (NumberFormatException e) {
+            JOptionPane.showMessageDialog(this,
+                "Enter valid numeric marks");
+        }
     }
 
-    private static void viewStudents() {
-        if (students.isEmpty()) {
-            System.out.println("No students recorded yet.");
+    // EDIT STUDENT
+    void editStudent() {
+
+        int row = table.getSelectedRow();
+
+        if (row == -1) {
+            JOptionPane.showMessageDialog(this,
+                "Select a student first");
             return;
         }
-        System.out.println();
-        System.out.printf("%-4s %-20s %-8s %-6s%n", "No.", "Name", "Grade", "Letter");
-        System.out.println("-------------------------------------------");
-        for (int i = 0; i < students.size(); i++) {
-            Student s = students.get(i);
-            System.out.printf("%-4d %-20s %-8.2f %-6s%n",
-                    i + 1, s.getName(), s.getGrade(), s.getLetterGrade());
+
+        int id = (int) model.getValueAt(row, 0);
+        Student s = findStudent(id);
+
+        if (s == null) return;
+
+        JTextField newName = new JTextField(s.name);
+        JTextField newMarks = new JTextField(
+            String.valueOf(s.marks)
+        );
+
+        Object[] fields = {
+            "Student Name:", newName,
+            "Marks:", newMarks
+        };
+
+        int result = JOptionPane.showConfirmDialog(
+            this, fields, "Edit Student",
+            JOptionPane.OK_CANCEL_OPTION
+        );
+
+        if (result == JOptionPane.OK_OPTION) {
+            String name = newName.getText().trim();
+
+            if (name.isEmpty()) {
+                JOptionPane.showMessageDialog(this,
+                    "Name cannot be empty");
+                return;
+            }
+
+            try {
+                double marks = Double.parseDouble(
+                    newMarks.getText().trim()
+                );
+
+                if (marks < 0 || marks > 100) {
+                    JOptionPane.showMessageDialog(this,
+                        "Marks must be between 0 and 100");
+                    return;
+                }
+
+                s.name = name;
+                s.marks = marks;
+
+                refreshDashboard();
+
+            } catch (NumberFormatException e) {
+                JOptionPane.showMessageDialog(this,
+                    "Enter valid marks");
+            }
         }
     }
 
-    private static void updateStudent() {
-        if (students.isEmpty()) {
-            System.out.println("No students to update.");
+    // DELETE STUDENT
+    void deleteStudent() {
+
+        int row = table.getSelectedRow();
+
+        if (row == -1) {
+            JOptionPane.showMessageDialog(this,
+                "Select a student first");
             return;
         }
-        viewStudents();
-        int index = readInt("Enter student number to update: ") - 1;
-        if (!isValidIndex(index)) {
-            System.out.println("Invalid student number.");
-            return;
+
+        int id = (int) model.getValueAt(row, 0);
+        Student s = findStudent(id);
+
+        if (s != null) {
+            int confirm = JOptionPane.showConfirmDialog(
+                this, "Delete selected student?",
+                "Confirm", JOptionPane.YES_NO_OPTION
+            );
+
+            if (confirm == JOptionPane.YES_OPTION) {
+                students.remove(s);
+                refreshDashboard();
+            }
         }
-        double newGrade = readGrade("Enter new grade (0-100): ");
-        students.get(index).setGrade(newGrade);
-        System.out.println("Grade updated successfully.");
     }
 
-    private static void deleteStudent() {
-        if (students.isEmpty()) {
-            System.out.println("No students to delete.");
-            return;
-        }
-        viewStudents();
-        int index = readInt("Enter student number to delete: ") - 1;
-        if (!isValidIndex(index)) {
-            System.out.println("Invalid student number.");
-            return;
-        }
-        Student removed = students.remove(index);
-        System.out.println("Deleted: " + removed.getName());
-    }
+    // SEARCH AND DISPLAY TABLE
+    void refreshTable() {
 
-    private static void showSummaryReport() {
-        if (students.isEmpty()) {
-            System.out.println("No data available for a report.");
-            return;
-        }
+        model.setRowCount(0);
 
-        double total = 0;
-        Student highest = students.get(0);
-        Student lowest = students.get(0);
+        String query = searchField.getText()
+            .trim().toLowerCase();
 
         for (Student s : students) {
-            total += s.getGrade();
-            if (s.getGrade() > highest.getGrade()) highest = s;
-            if (s.getGrade() < lowest.getGrade()) lowest = s;
-        }
-        double average = total / students.size();
 
-        System.out.println();
-        System.out.println("========== SUMMARY REPORT ==========");
-        System.out.printf("%-4s %-20s %-8s %-6s%n", "No.", "Name", "Grade", "Letter");
-        System.out.println("------------------------------------");
-        for (int i = 0; i < students.size(); i++) {
-            Student s = students.get(i);
-            System.out.printf("%-4d %-20s %-8.2f %-6s%n",
-                    i + 1, s.getName(), s.getGrade(), s.getLetterGrade());
-        }
-        System.out.println("------------------------------------");
-        System.out.println("Total students : " + students.size());
-        System.out.printf("Average score  : %.2f%n", average);
-        System.out.printf("Highest score  : %.2f (%s)%n", highest.getGrade(), highest.getName());
-        System.out.printf("Lowest score   : %.2f (%s)%n", lowest.getGrade(), lowest.getName());
-        System.out.println("====================================");
-    }
+            if (s.name.toLowerCase().contains(query)
+                || String.valueOf(s.id).contains(query)) {
 
-    // ---------- Helpers ----------
-
-    private static boolean isValidIndex(int index) {
-        return index >= 0 && index < students.size();
-    }
-
-    // Reads an integer safely (re-asks until valid)
-    private static int readInt(String prompt) {
-        while (true) {
-            System.out.print(prompt);
-            String line = scanner.nextLine().trim();
-            try {
-                return Integer.parseInt(line);
-            } catch (NumberFormatException e) {
-                System.out.println("Please enter a valid whole number.");
+                model.addRow(new Object[] {
+                    s.id,
+                    s.name,
+                    s.marks,
+                    s.getGrade(),
+                    s.getStatus()
+                });
             }
         }
     }
 
-    // Reads a grade between 0 and 100 safely
-    private static double readGrade(String prompt) {
-        while (true) {
-            System.out.print(prompt);
-            String line = scanner.nextLine().trim();
-            try {
-                double grade = Double.parseDouble(line);
-                if (grade >= 0 && grade <= 100) {
-                    return grade;
+    // FIND STUDENT BY ID
+    Student findStudent(int id) {
+        for (Student s : students) {
+            if (s.id == id) return s;
+        }
+        return null;
+    }
+
+    // UPDATE DASHBOARD
+    void refreshDashboard() {
+
+        refreshTable();
+
+        int count = students.size();
+
+        total.setText(String.valueOf(count));
+
+        if (count == 0) {
+            average.setText("0.00");
+            highest.setText("0");
+            lowest.setText("0");
+            passed.setText("0");
+            failed.setText("0");
+            topper.setText("TOPPER: No records available");
+            return;
+        }
+
+        double sum = 0;
+        double max = students.get(0).marks;
+        double min = students.get(0).marks;
+
+        int passCount = 0;
+        int failCount = 0;
+
+        Student top = students.get(0);
+
+        for (Student s : students) {
+
+            sum += s.marks;
+
+            if (s.marks > max) max = s.marks;
+            if (s.marks < min) min = s.marks;
+
+            if (s.marks >= 35) passCount++;
+            else failCount++;
+
+            if (s.marks > top.marks) top = s;
+        }
+
+        average.setText(String.format("%.2f", sum / count));
+        highest.setText(String.valueOf(max));
+        lowest.setText(String.valueOf(min));
+        passed.setText(String.valueOf(passCount));
+        failed.setText(String.valueOf(failCount));
+
+        topper.setText(
+            "TOPPER: " + top.name + " - " + top.marks + " marks"
+        );
+    }
+
+    // EXPORT CSV
+    void exportCSV() {
+
+        if (students.isEmpty()) {
+            JOptionPane.showMessageDialog(this,
+                "No records available to export");
+            return;
+        }
+
+        JFileChooser chooser = new JFileChooser();
+        chooser.setSelectedFile(
+            new File("StudentGradeReport.csv")
+        );
+
+        if (chooser.showSaveDialog(this)
+            == JFileChooser.APPROVE_OPTION) {
+
+            try (PrintWriter out = new PrintWriter(
+                chooser.getSelectedFile())) {
+
+                out.println(
+                    "ID,Student Name,Marks,Grade,Status"
+                );
+
+                for (Student s : students) {
+                    out.println(
+                        s.id + ",\"" +
+                        s.name.replace("\"", "\"\"") + "\"," +
+                        s.marks + "," +
+                        s.getGrade() + "," +
+                        s.getStatus()
+                    );
                 }
-                System.out.println("Grade must be between 0 and 100.");
-            } catch (NumberFormatException e) {
-                System.out.println("Please enter a valid number.");
+
+                JOptionPane.showMessageDialog(this,
+                    "CSV exported successfully!");
+
+            } catch (Exception e) {
+                JOptionPane.showMessageDialog(this,
+                    "Error exporting file");
             }
         }
+    }
+
+    // CLEAR ALL RECORDS
+    void clearAll() {
+
+        int confirm = JOptionPane.showConfirmDialog(
+            this, "Delete all student records?",
+            "Confirm", JOptionPane.YES_NO_OPTION
+        );
+
+        if (confirm == JOptionPane.YES_OPTION) {
+            students.clear();
+            refreshDashboard();
+        }
+    }
+
+    // STUDENT CLASS
+    class Student {
+
+        int id;
+        String name;
+        double marks;
+
+        Student(int id, String name, double marks) {
+            this.id = id;
+            this.name = name;
+            this.marks = marks;
+        }
+
+        String getGrade() {
+
+            if (marks >= 90) return "A+";
+            if (marks >= 80) return "A";
+            if (marks >= 70) return "B";
+            if (marks >= 60) return "C";
+            if (marks >= 50) return "D";
+            if (marks >= 35) return "E";
+
+            return "F";
+        }
+
+        String getStatus() {
+            return marks >= 35 ? "Pass" : "Fail";
+        }
+    }
+
+    public static void main(String[] args) {
+        SwingUtilities.invokeLater(() ->
+            new StudentGradeTracker()
+        );
     }
 }
